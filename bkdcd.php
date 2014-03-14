@@ -6,24 +6,31 @@
  * @author Alexandre Heimburger
  */
 	require_once 'PHP/Token/Stream.php';
-	if (count($argv)!=4) {
+	require_once 'PHP/Token.php';
+	if (count($argv)!=3) {
 		echo 'Missing arguments. Usage "bkdcd filepath output (html|text)"';
 		return;
 	}
-	$file          = $argv[1];
+	$filePath      = $argv[1];
 	$output        = $argv[2];
-	$lineSep       = $output == 'html' ? '<br>' : '\n';
+	$lineSep       = $output == 'html' ? "<br>" : "\n";
 	$argIndex      = 1;
 	$funcs         = array();
 	
-	$basePath1 = '/some/path';
-	$basePath2 = '/some/path';
-	$paths = array($basePathBk, $basePathBackend);
-	
-		echo "Processing file $file";
-		$tokens        = new PHP_Token_Stream($file);
+	$basePath1 = '/Users/ahb/Documents/work/code/trunk';
+	$basePath2 = '/Users/ahb/Documents/work/code/bkbackend';
+	$paths     = array($basePath1, $basePath2);
+	$dir       = opendir($filePath); 
+	while($file = readdir($dir)) {
+		
+		if ($file == "." || $file == "..") continue;
+		if (is_dir($filePath."/".$file)) continue;
+		
+		echo "Processing file $file $lineSep";
+		$tokens        = new PHP_Token_Stream($filePath."/".$file);
 		$class         = '';
 		$nbTokens      = count($tokens);
+		$funcs         = array();
 		for ($i = 0; $i<$nbTokens; $i++) {
 			if($tokens[$i] instanceof PHP_Token_CLASS) {
 				$class = $tokens[$i]->getName();
@@ -60,46 +67,57 @@
 				$funcs[]       = $func;
 			}
 		}
-	// Look for dead functions
-	if (count($funcs)) {
-		$globalSavedLines = 0;
-		$deadFunctions    = 0;
-		$reservedFuncs    = array('__construct', '__call', '__toString');
-		foreach ($funcs as $func) {	
-			if (in_array($func['name'], $reservedFuncs)) continue;
-			$pattern =  $func['isStatic'] ? ($func['isPublic'] ? $func['class']."::".$func['name']."(" : "self::".$func['name']."(") : "\->".$func['name']."(";
-			$found = false;
-			foreach($paths as $path) {
-				$cmd     = "find $path -name '*.php' -not -path \*test\* -not -path \*lib\* | xargs grep '$pattern'";
-				$output  = array();
-				exec($cmd, $output);
-				if (count($output)) {
-					$found = true;
-					//if ($func['name'] == 'publish') print_r($output);
-					break;
-				}
+		// Look for dead class
+		$pattern = $class;
+		$found   = false;
+		foreach($paths as $path) {
+			$cmd     = "find $path -name '*.php' -not -path \*test\* -not -path \*lib\* | xargs grep '$pattern'";
+			$output  = array();
+			exec($cmd, $output);
+			if (count($output)) {
+				$found = true;
+				break;
 			}
-			if (!$found) {
-				// Try to grep the mapping file
-				$pattern = $func['isStatic'] ? $func['class']."::".$func['name'] : "::".$func['name'];
-				$cmd     = "find $paths[0] -name 'mapping.php' -not -path \*test\* -not -path \*lib\* | xargs grep '$pattern'";
-				$output  = array();
-				exec($cmd, $output);
-				if (!count($output)) {
+		}
+		if ($found==false) {
+			echo "$lineSep*********************************************$lineSep";
+			echo "$class is never used $lineSep";
+			echo "*********************************************$lineSep";
+			return 0;
+		}
+		unset($output);
+		// Look for dead functions
+		if (count($funcs)) {
+			$globalSavedLines = 0;
+			$deadFunctions    = 0;
+			$reservedFuncs    = array('__construct', '__call', '__toString');
+			foreach ($funcs as $func) {	
+				if (in_array($func['name'], $reservedFuncs)) continue;
+				$pattern =  $func['isStatic'] ? ($func['isPublic'] ? $func['class']."::".$func['name']."(" : "self::".$func['name']."(") : "\->".$func['name']."(";
+				$found = false;
+				foreach($paths as $path) {
+					$cmd     = "find $path -name '*.php' -not -path \*test\* -not -path \*lib\* | xargs grep '$pattern'";	
+					$output  = array();
+					exec($cmd, $output);
+					if (count($output)) {
+						$found = true;
+						break;
+					}
+				}
+				unset($output);
+				if (!$found) {
 					echo "function ".$func['class']."::".$func['name']." is not used. ".$func['linesCount']." lines of code can be saved $lineSep";
 					$globalSavedLines+=$func['linesCount'];
 					$deadFunctions++;
-				} /*else {
-					if ($func['name'] == 'publish') print_r($output);
-				}*/
+				}
+				unset($output);
 			}
-			unset($output);
+			echo "$lineSep*********************************************$lineSep";
+			echo "$deadFunctions dead functions detected$lineSep";
+			echo "$globalSavedLines lines of code can be saved$lineSep";			
+			echo "*********************************************$lineSep";
+		} else {
+			echo "no function to process $lineSep";
 		}
-		echo "*********************************************$lineSep";
-		echo "$deadFunctions dead functions detected$lineSep";
-		echo "$globalSavedLines lines of code can be saved$lineSep";			
-		echo "*********************************************$lineSep";
-	} else {
-		echo 'no function to process<br>';
 	}
 ?>
